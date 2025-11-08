@@ -1,0 +1,8 @@
+.user-layout {
+  min-height: 100vh;
+  background-color: #f9fafb;
+}
+
+.user-content {
+  min-height: calc(100vh - 70px);
+}
