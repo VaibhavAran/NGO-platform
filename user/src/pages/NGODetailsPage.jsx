@@ -3,26 +3,102 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import '../css/NGODetailsPage.css';
 
+// 🔹 NEW imports
+import { db } from '../firebase/config';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+
+
 const NGODetailsPage = () => {
-  const { id } = useParams();
+  const { id } = useParams();          // Firestore doc ID from URL
   const navigate = useNavigate();
   
-  // State for NGO data (will be fetched from backend)
   const [ngo, setNgo] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // 🔹 Fetch NGO from Firestore
   useEffect(() => {
-    // TODO: Fetch NGO details from backend using id
-    // Simulating data fetch
-    setTimeout(() => {
-      // This will be replaced with actual API call
-      setNgo(null); // No data for now
+  const fetchNgo = async () => {
+    if (!id) return;
+
+    try {
+      setLoading(true);
+
+      // 1️⃣ NGO details
+      const docRef = doc(db, 'ngos', id);
+      const docSnap = await getDoc(docRef);
+
+      if (!docSnap.exists()) {
+        console.warn('NGO not found for id:', id);
+        setNgo(null);
+        setLoading(false);
+        return;
+      }
+
+      const data = docSnap.data();
+
+      // 2️⃣ Requests stats for this NGO
+      const reqQ = query(
+        collection(db, 'requests'),
+        where('ngoId', '==', docSnap.id)
+      );
+
+      const reqSnap = await getDocs(reqQ);
+
+      const totalRequests = reqSnap.size;
+      let resolvedRequests = 0;
+
+      reqSnap.forEach((rDoc) => {
+        const rData = rDoc.data();
+        const st = (rData.status || '').toString().toLowerCase();
+
+        // jo tum solve pe set kar rahe ho: "resolved: <solution>"
+        if (st.startsWith('resolved')) {
+          resolvedRequests += 1;
+        }
+      });
+
+      // 3️⃣ Map into UI shape
+      const mappedNgo = {
+        id: docSnap.id,
+        name: data.name || 'Unnamed NGO',
+        verified: data.verified ?? true,
+        category: data.category || 'General',
+        description: data.description || 'No description available',
+
+        services: data.services || [],
+        workingAreas: data.workingAreas || [],
+
+        email: data.email || 'Not provided',
+        phone: data.phone || 'Not provided',
+        address: data.address || 'Address not provided',
+        city: data.city || 'City not specified',
+        state: data.state || 'State not specified',
+
+        registrationNumber: data.registrationNumber || 'N/A',
+        establishedYear: data.establishedYear || 'N/A',
+        website: data.website || '',
+
+        // 🔥 override with live stats
+        totalRequests,
+        resolvedRequests,
+      };
+
+      setNgo(mappedNgo);
+    } catch (err) {
+      console.error('Error fetching NGO details:', err);
+      setNgo(null);
+    } finally {
       setLoading(false);
-    }, 500);
-  }, [id]);
+    }
+  };
+
+  fetchNgo();
+}, [id]);
+
 
   const handleSubmitRequest = () => {
     if (ngo) {
+      // Pass full NGO object to submit-request page (same as before)
       navigate('/submit-request', { state: { ngo } });
     }
   };
@@ -49,7 +125,9 @@ const NGODetailsPage = () => {
           <div className="empty-state">
             <p>🏢</p>
             <p>NGO not found</p>
-            <p className="empty-subtitle">The NGO you're looking for doesn't exist or has been removed</p>
+            <p className="empty-subtitle">
+              The NGO you're looking for doesn't exist or has been removed
+            </p>
             <button className="btn-back" onClick={handleGoBack}>
               ← Back to All NGOs
             </button>
@@ -76,7 +154,14 @@ const NGODetailsPage = () => {
                 <h1 className="ngo-title">{ngo.name}</h1>
                 {ngo.verified && (
                   <span className="verified-badge">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                    >
                       <path d="M5 13l4 4L19 7" />
                     </svg>
                     Verified
@@ -88,7 +173,14 @@ const NGODetailsPage = () => {
           </div>
           <div className="ngo-header-right">
             <button className="btn-submit-request" onClick={handleSubmitRequest}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path d="M12 5v14M5 12h14" />
               </svg>
               Submit Request
@@ -129,7 +221,9 @@ const NGODetailsPage = () => {
               <div className="areas-tags">
                 {ngo.workingAreas && ngo.workingAreas.length > 0 ? (
                   ngo.workingAreas.map((area, index) => (
-                    <span key={index} className="area-tag">{area}</span>
+                    <span key={index} className="area-tag">
+                      {area}
+                    </span>
                   ))
                 ) : (
                   <p className="no-data">No working areas listed</p>
@@ -148,7 +242,10 @@ const NGODetailsPage = () => {
                   <div className="contact-icon">📧</div>
                   <div className="contact-details">
                     <p className="contact-label">Email</p>
-                    <a href={`mailto:${ngo.email}`} className="contact-value">
+                    <a
+                      href={ngo.email !== 'Not provided' ? `mailto:${ngo.email}` : '#'}
+                      className="contact-value"
+                    >
                       {ngo.email}
                     </a>
                   </div>
@@ -157,7 +254,10 @@ const NGODetailsPage = () => {
                   <div className="contact-icon">📞</div>
                   <div className="contact-details">
                     <p className="contact-label">Phone</p>
-                    <a href={`tel:${ngo.phone}`} className="contact-value">
+                    <a
+                      href={ngo.phone !== 'Not provided' ? `tel:${ngo.phone}` : '#'}
+                      className="contact-value"
+                    >
                       {ngo.phone}
                     </a>
                   </div>
@@ -173,7 +273,9 @@ const NGODetailsPage = () => {
                   <div className="contact-icon">🌐</div>
                   <div className="contact-details">
                     <p className="contact-label">Location</p>
-                    <p className="contact-value">{ngo.city}, {ngo.state}</p>
+                    <p className="contact-value">
+                      {ngo.city}, {ngo.state}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -185,17 +287,30 @@ const NGODetailsPage = () => {
               <div className="info-list">
                 <div className="info-item">
                   <span className="info-label">Registration Number</span>
-                  <span className="info-value">{ngo.registrationNumber || 'N/A'}</span>
+                  <span className="info-value">
+                    {ngo.registrationNumber || 'N/A'}
+                  </span>
                 </div>
                 <div className="info-item">
                   <span className="info-label">Established</span>
-                  <span className="info-value">{ngo.establishedYear || 'N/A'}</span>
+                  <span className="info-value">
+                    {ngo.establishedYear || 'N/A'}
+                  </span>
                 </div>
                 <div className="info-item">
                   <span className="info-label">Website</span>
-                  <a href={ngo.website} target="_blank" rel="noopener noreferrer" className="info-value link">
-                    {ngo.website || 'N/A'}
-                  </a>
+                  {ngo.website ? (
+                    <a
+                      href={ngo.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="info-value link"
+                    >
+                      {ngo.website}
+                    </a>
+                  ) : (
+                    <span className="info-value">N/A</span>
+                  )}
                 </div>
               </div>
             </div>

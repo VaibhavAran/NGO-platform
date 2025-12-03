@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import '../css/MyRequestsPage.css';
+import { db, auth } from '../firebase/config'; // Import Firestore and auth
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore'; // Firestore functions
 
 const MyRequestsPage = () => {
   const navigate = useNavigate();
@@ -12,6 +14,52 @@ const MyRequestsPage = () => {
   });
 
   const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchRequests = async () => {
+      console.log('MyRequestsPage: Starting to fetch requests...');
+
+      if (!auth.currentUser) {
+        const errMsg = 'You must be logged in to view requests.';
+        setError(errMsg);
+        console.error('MyRequestsPage:', errMsg);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const q = query(
+          collection(db, 'requests'),
+          where('userId', '==', auth.currentUser.uid),
+          orderBy('date', 'desc')
+        );
+
+        // Add timeout
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Fetching timed out after 10 seconds')), 10000)
+        );
+        const querySnapshot = await Promise.race([getDocs(q), timeoutPromise]);
+
+        const fetchedRequests = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          date: doc.data().date?.toDate()?.toLocaleDateString() || 'N/A' // Convert timestamp to string
+        }));
+
+        console.log('MyRequestsPage: Fetched requests', fetchedRequests);
+        setRequests(fetchedRequests);
+      } catch (err) {
+        console.error('MyRequestsPage: Error fetching requests:', err);
+        setError(`Failed to load requests: ${err.message}. Check console for details.`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRequests();
+  }, []);
 
   const handleFilterChange = (field, value) => {
     setFilters({ ...filters, [field]: value });
@@ -41,6 +89,24 @@ const MyRequestsPage = () => {
     }
   };
 
+  // Filter requests based on status and search
+  const filteredRequests = requests.filter(request => {
+    const matchesStatus = filters.status === 'all' || request.status === filters.status;
+    const matchesSearch = request.title.toLowerCase().includes(filters.search.toLowerCase());
+    return matchesStatus && matchesSearch;
+  });
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="loading-container">
+          <div className="spinner"></div>
+          <p>Loading your requests...</p>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="my-requests-page">
@@ -56,6 +122,12 @@ const MyRequestsPage = () => {
             New Request
           </button>
         </div>
+
+        {error && (
+          <div className="error-message">
+            <p>{error}</p>
+          </div>
+        )}
 
         <div className="filters-section">
           <div className="filters-left">
@@ -81,9 +153,9 @@ const MyRequestsPage = () => {
           </div>
         </div>
 
-        {requests.length > 0 ? (
+        {filteredRequests.length > 0 ? (
           <div className="requests-grid">
-            {requests.map((request) => (
+            {filteredRequests.map((request) => (
               <div key={request.id} className="request-card">
                 <div className="request-header">
                   <div className="request-badges">
@@ -94,7 +166,7 @@ const MyRequestsPage = () => {
                       {request.priority}
                     </span>
                   </div>
-                  <span className="request-id">#{request.id}</span>
+                  <span className="request-id">#{request.id.slice(-6)}</span> {/* Short ID for display */}
                 </div>
                 <div className="request-body">
                   <h3 className="request-title">{request.title}</h3>
@@ -122,7 +194,11 @@ const MyRequestsPage = () => {
           <div className="empty-state">
             <p>📋</p>
             <p>No requests found</p>
-            <p className="empty-subtitle">You haven't submitted any requests yet</p>
+            <p className="empty-subtitle">
+              {filters.search || filters.status !== 'all'
+                ? 'Try adjusting your filters'
+                : 'You haven\'t submitted any requests yet'}
+            </p>
             <button className="btn-new-request" onClick={() => navigate('/submit-request')}>
               Submit Your First Request
             </button>

@@ -1,7 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import '../css/AllNGOsPage.css';
+
+// 🔹 NEW
+import { db } from '../firebase/config';
+import { collection, getDocs } from 'firebase/firestore';
+
 
 const AllNGOsPage = () => {
   const navigate = useNavigate();
@@ -16,8 +21,50 @@ const AllNGOsPage = () => {
   // State for view mode
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
 
-  // State for NGOs data (will be fetched from backend)
-  const [ngos, setNgos] = useState([]);
+  // State for NGOs data (added static data for now)
+  // State for NGOs data
+const [ngos, setNgos] = useState([]);
+const [ngosLoading, setNgosLoading] = useState(true);
+const [ngosError, setNgosError] = useState('');
+
+useEffect(() => {
+  const fetchNgos = async () => {
+    try {
+      setNgosLoading(true);
+      setNgosError('');
+
+      const snap = await getDocs(collection(db, 'ngos'));
+
+      const list = snap.docs.map((docSnap) => {
+        const data = docSnap.data();
+
+        return {
+          id: docSnap.id, // ⭐ important: this id will be used for view + submit
+          name: data.name || 'Unnamed NGO',
+          verified: data.verified ?? true,
+          category: data.category || 'Others',
+          email: data.email || 'Not provided',
+          phone: data.phone || 'Not provided',
+          location:
+            data.city && data.state
+              ? `${data.city}, ${data.state}`
+              : data.city || data.state || 'Location not specified',
+          description: data.description || 'No description available',
+        };
+      });
+
+      setNgos(list);
+    } catch (err) {
+      console.error('Error fetching NGOs:', err);
+      setNgosError('Failed to load NGOs. Please try again later.');
+    } finally {
+      setNgosLoading(false);
+    }
+  };
+
+  fetchNgos();
+}, []);
+
 
   // Handle filter changes
   const handleFilterChange = (field, value) => {
@@ -33,6 +80,27 @@ const AllNGOsPage = () => {
   const handleSubmitRequest = (ngo) => {
     navigate('/submit-request', { state: { ngo } });
   };
+
+  const filteredNgos = ngos.filter((ngo) => {
+  const searchMatch = ngo.name
+    .toLowerCase()
+    .includes(filters.search.toLowerCase().trim());
+
+  const locationMatch = ngo.location
+    .toLowerCase()
+    .includes(filters.location.toLowerCase().trim());
+
+  let categoryMatch = true;
+  if (filters.category !== 'all') {
+    // we just check if category text roughly contains it
+    categoryMatch = (ngo.category || '')
+      .toLowerCase()
+      .includes(filters.category.replace('_', ' '));
+  }
+
+  return searchMatch && locationMatch && categoryMatch;
+});
+
 
   return (
     <Layout>
@@ -125,56 +193,66 @@ const AllNGOsPage = () => {
         </div>
 
         {/* NGOs List/Grid */}
-        {ngos.length > 0 ? (
-          <div className={`ngos-container ${viewMode}`}>
-            {ngos.map((ngo) => (
-              <div key={ngo.id} className="ngo-card">
-                <div className="ngo-header">
-                  <div className="ngo-icon">🏢</div>
-                  {ngo.verified && (
-                    <span className="verified-badge">✓ Verified</span>
-                  )}
-                </div>
-                <div className="ngo-body">
-                  <h3 className="ngo-name">{ngo.name}</h3>
-                  <p className="ngo-category">
-                    <span className="category-badge">{ngo.category}</span>
-                  </p>
-                  <div className="ngo-info">
-                    <p>📧 {ngo.email}</p>
-                    <p>📞 {ngo.phone}</p>
-                    <p>📍 {ngo.location}</p>
-                  </div>
-                  <p className="ngo-description">{ngo.description}</p>
-                </div>
-                <div className="ngo-actions">
-                  <button
-                    className="btn-view"
-                    onClick={() => handleViewDetails(ngo.id)}
-                  >
-                    View Details
-                  </button>
-                  <button
-                    className="btn-request"
-                    onClick={() => handleSubmitRequest(ngo)}
-                  >
-                    Submit Request
-                  </button>
-                </div>
-              </div>
-            ))}
+        {/* NGOs List/Grid */}
+{ngosLoading ? (
+  <div className="empty-state">
+    <p>⏳ Loading NGOs...</p>
+    <p className="empty-subtitle">Please wait while we fetch registered NGOs.</p>
+  </div>
+) : ngosError ? (
+  <div className="empty-state">
+    <p>⚠️ Error</p>
+    <p className="empty-subtitle">{ngosError}</p>
+  </div>
+) : filteredNgos.length > 0 ? (
+  <div className={`ngos-container ${viewMode}`}>
+    {filteredNgos.map((ngo) => (
+      <div key={ngo.id} className="ngo-card">
+        <div className="ngo-header">
+          <div className="ngo-icon">🏢</div>
+          {ngo.verified && <span className="verified-badge">✓ Verified</span>}
+        </div>
+        <div className="ngo-body">
+          <h3 className="ngo-name">{ngo.name}</h3>
+          <p className="ngo-category">
+            <span className="category-badge">{ngo.category}</span>
+          </p>
+          <div className="ngo-info">
+            <p>📧 {ngo.email}</p>
+            <p>📞 {ngo.phone}</p>
+            <p>📍 {ngo.location}</p>
           </div>
-        ) : (
-          <div className="empty-state">
-            <p>🏢</p>
-            <p>No NGOs found</p>
-            <p className="empty-subtitle">
-              {filters.search || filters.category !== 'all' || filters.location
-                ? 'Try adjusting your filters'
-                : 'NGOs will appear here once registered'}
-            </p>
-          </div>
-        )}
+          <p className="ngo-description">{ngo.description}</p>
+        </div>
+        <div className="ngo-actions">
+          <button
+            className="btn-view"
+            onClick={() => handleViewDetails(ngo.id)}
+          >
+            View Details
+          </button>
+          <button
+            className="btn-request"
+            onClick={() => handleSubmitRequest(ngo)}
+          >
+            Submit Request
+          </button>
+        </div>
+      </div>
+    ))}
+  </div>
+) : (
+  <div className="empty-state">
+    <p>🏢</p>
+    <p>No NGOs found</p>
+    <p className="empty-subtitle">
+      {filters.search || filters.category !== 'all' || filters.location
+        ? 'Try adjusting your filters'
+        : 'NGOs will appear here once registered'}
+    </p>
+  </div>
+)}
+
       </div>
     </Layout>
   );
