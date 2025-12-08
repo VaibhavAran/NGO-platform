@@ -152,7 +152,7 @@ const LoginPage = () => {
 
         {/* Footer */}
         <div className="auth-footer">
-          <p>© 2024 NGO Platform. All rights reserved.</p>
+          <p>© 2025 NGO Platform. All rights reserved.</p>
         </div>
       </div>
     </div>
